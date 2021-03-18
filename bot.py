@@ -3,6 +3,8 @@ from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 import random
 import logging
 import handlers
+from models import UserState, Registration
+from pony.orm import db_session
 
 try:
     import settings
@@ -34,14 +36,6 @@ def configure_logging():
     log.setLevel(logging.DEBUG)
 
 
-class UserState:
-    """ Состояние пользователя внутри сценария. """
-    def __init__(self, scenario_name, step_name, context=None):
-        self.scenario_name = scenario_name
-        self.step_name = step_name
-        self.context = context or dict()
-
-
 class Bot:
     """
     Сценарий регистрации на конференцию через vk.com.
@@ -64,7 +58,6 @@ class Bot:
         self.vk = vk_api.VkApi(token=token)
         self.long_poller = VkBotLongPoll(self.vk, self.group_id)
         self.api = self.vk.get_api()
-        self.user_states = dict()  # user_id -> UserState
 
     def run(self):
         """ Запуск echo бота. """
@@ -74,6 +67,7 @@ class Bot:
             except Exception as err:
                 log.exception('Error in the processing of the event')
 
+    @db_session
     def on_event(self, event):
         """ Отправляет сообщение-ответ на запрос пользователя.
 
@@ -87,11 +81,12 @@ class Bot:
         # определяем id пользователя и текст сообщения
         user_id = event.object.peer_id
         text = event.object.text
+        state = UserState.get(user_id=str(user_id))
 
         # находится ли пользователь в некотором сценарии
-        if user_id in self.user_states:
+        if state is not None:
             # продолжаем сценарий
-            text_to_send = self.continue_scenario(user_id, text)
+            text_to_send = self.continue_scenario(text, state)
         else:
             # определяем потребность пользователя
             for intent in settings.INTENTS:
@@ -123,17 +118,17 @@ class Bot:
         first_step = scenario['first_step']
         step = scenario['steps'][first_step]
         text_to_send = step['text']
-        self.user_states[user_id] = UserState(scenario_name=scenario_name, step_name=first_step)
+        UserState(user_id=str(user_id), scenario_name=scenario_name, step_name=first_step, context={})
         return text_to_send
 
-    def continue_scenario(self, user_id, text):
+    def continue_scenario(self, text, state):
         """Продолжить сценарий для пользователя.
 
         :param user_id: id пользователя
         :param text: сообщение пользователя
+        :param state:
         :return: сообщение, которое необходимо отправить пользователю.
         """
-        state = self.user_states[user_id]
         steps = settings.SCENARIOS[state.scenario_name]['steps']
         step = steps[state.step_name]
 
@@ -144,8 +139,9 @@ class Bot:
             if next_step['next_step']:
                 state.step_name = step['next_step']
             else:
-                self.user_states.pop(user_id)
                 log.info('Зарестрирован: {name} {email}'.format(**state.context))
+                Registration(name=state.context['name'], email=state.context['email'])
+                state.delete()
         else:
             # повторить шаг текущего сценария
             text_to_send = step['failure_text'].format(**state.context)

@@ -2,6 +2,11 @@ certifi==2020.12.5
 chardet==4.0.0
 coverage==5.4
 idna==2.10
+pony==0.7.14
+postgres==3.0.0
+psycopg2==2.8.6
+psycopg2-binary==2.8.6
+psycopg2-pool==1.1
 requests==2.25.1
 six==1.15.0
 urllib3==1.26.3

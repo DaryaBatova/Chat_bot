@@ -1,4 +1,5 @@
 import re
+from generate_ticket import generate_ticket
 
 
 re_name = re.compile(r'^[\w\-\s]{3,40}$')
@@ -19,3 +20,7 @@ def handle_email(text, context):
         context['email'] = matches[0]
         return True
     return False
+
+
+def generate_ticket_handler(text, context):
+    return generate_ticket(name=context['name'], email=context['email'])
